@@ -2,7 +2,8 @@ import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import db
 
-import requests
+import yfinance as yf
+
 import json
 import os
 
@@ -13,6 +14,7 @@ from datetime import datetime
 # =====================================================
 
 firebase_json = os.environ.get("FIREBASE_KEY")
+
 firebase_dict = json.loads(firebase_json)
 
 cred = credentials.Certificate(firebase_dict)
@@ -22,60 +24,62 @@ firebase_admin.initialize_app(cred, {
 })
 
 # =====================================================
-# SETTINGS
+# USD INR
 # =====================================================
 
-API_KEY = "VjyaYTkTRfLKs4ljhiYNvNYdhhBwOnO5"
-
-usd_inr = 83.5
+usd_inr = float(
+    yf.Ticker("USDINR=X")
+    .history(period="1d")["Close"]
+    .iloc[-1]
+)
 
 # =====================================================
-# REAL COMMODITY SYMBOLS
+# REAL YAHOO METAL SYMBOLS
 # =====================================================
 
 symbols = {
 
-    "copper": "HGUSD",
-    "nickel": "NICKEL",
-    "lead": "LEAD",
-    "zinc": "ZINC",
-    "tin": "TIN"
+    "copper": "HG=F",
+    "nickel": "NI=F",
+    "zinc": "ZN=F",
+    "lead": "PB=F",
+    "tin": "SN=F"
 
 }
 
 firebase_data = {}
 
 # =====================================================
-# FETCH
+# FETCH LIVE DATA
 # =====================================================
 
 for metal, symbol in symbols.items():
 
     try:
 
-        url = f"https://financialmodelingprep.com/api/v3/quote-short/{symbol}?apikey={API_KEY}"
+        ticker = yf.Ticker(symbol)
 
-        response = requests.get(url)
+        hist = ticker.history(period="1d")
 
-        result = response.json()
+        if not hist.empty:
 
-        print(metal, result)
-
-        if isinstance(result, list) and len(result) > 0:
-
-            price = float(result[0]["price"])
-
-            inr_per_kg = (price * usd_inr) / 1000
+            price = float(hist["Close"].iloc[-1])
 
             firebase_data[metal] = {
 
-                "usd_per_ton": round(price, 2),
+                "usd_price": round(price, 2),
 
-                "inr_per_kg": round(inr_per_kg, 2),
+                "inr_estimated": round(price * usd_inr, 2),
 
                 "updated_at": str(datetime.now())
 
             }
+
+            print(metal, price)
+
+        else:
+
+            print("No data:", metal)
 
     except Exception as e:
 
