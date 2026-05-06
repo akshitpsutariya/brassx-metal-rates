@@ -7,9 +7,9 @@ import json
 import os
 from datetime import datetime
 
-# ---------------------------------------------------
+# ===================================================
 # FIREBASE INIT
-# ---------------------------------------------------
+# ===================================================
 
 firebase_json = os.environ.get("FIREBASE_KEY")
 
@@ -21,53 +21,84 @@ firebase_admin.initialize_app(cred, {
     'databaseURL': 'https://rate-calculator-ff3b1-default-rtdb.firebaseio.com/'
 })
 
-# ---------------------------------------------------
-# LIVE USD INR
-# ---------------------------------------------------
+# ===================================================
+# SETTINGS
+# ===================================================
+
+API_KEY = "VjyaYTkTRfLKs4ljhiYNvNYdhhBwOnO5"
 
 usd_inr = 83.5
 
-# ---------------------------------------------------
-# FREE LIVE METAL DATA
-# ---------------------------------------------------
+# ===================================================
+# METAL SYMBOLS
+# ===================================================
 
-# Using static fallback + easy API architecture
+symbols = {
 
-metals = {
-
-    "copper": 9800,
-    "zinc": 2700,
-    "nickel": 19000,
-    "lead": 2100,
-    "tin": 32000
+    "copper": "HGUSD",
+    "zinc": "ZNCUSD",
+    "nickel": "NICKELUSD",
+    "lead": "LEADUSD",
+    "tin": "TINUSD"
 
 }
 
-# ---------------------------------------------------
-# CALCULATE INR/KG
-# ---------------------------------------------------
-
 data = {}
 
-for metal, usd_per_ton in metals.items():
+# ===================================================
+# FETCH LIVE METAL DATA
+# ===================================================
 
-    inr_per_kg = (usd_per_ton * usd_inr) / 1000
+for metal, symbol in symbols.items():
 
-    data[metal] = {
+    try:
 
-        "usd_per_ton": usd_per_ton,
+        url = f"https://financialmodelingprep.com/api/v3/quote/{symbol}?apikey={API_KEY}"
 
-        "inr_per_kg": round(inr_per_kg, 2),
+        response = requests.get(url)
 
-        "updated_at": str(datetime.now())
-    }
+        result = response.json()
 
-# ---------------------------------------------------
+        print(f"{metal} response:", result)
+
+        if isinstance(result, list) and len(result) > 0:
+
+            usd_per_ton = float(result[0]["price"])
+
+        else:
+
+            usd_per_ton = 0
+
+        # USD/TON -> INR/KG
+
+        inr_per_kg = (usd_per_ton * usd_inr) / 1000
+
+        data[metal] = {
+
+            "usd_per_ton": round(usd_per_ton, 2),
+
+            "inr_per_kg": round(inr_per_kg, 2),
+
+            "updated_at": str(datetime.now())
+
+        }
+
+    except Exception as e:
+
+        data[metal] = {
+
+            "error": str(e),
+
+            "updated_at": str(datetime.now())
+
+        }
+
+# ===================================================
 # PUSH TO FIREBASE
-# ---------------------------------------------------
+# ===================================================
 
 ref = db.reference("/metal_rates")
 
 ref.set(data)
 
-print("Metal prices updated successfully")
+print("Live metal prices updated successfully")
