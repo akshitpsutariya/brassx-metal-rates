@@ -5,8 +5,9 @@ from firebase_admin import db
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.chrome.service import Service
+
+from webdriver_manager.chrome import ChromeDriverManager
 
 import json
 import os
@@ -14,7 +15,7 @@ import time
 from datetime import datetime
 
 # =====================================================
-# FIREBASE INIT
+# FIREBASE
 # =====================================================
 
 firebase_json = os.environ.get("FIREBASE_KEY")
@@ -33,19 +34,18 @@ firebase_admin.initialize_app(cred, {
 
 options = Options()
 
-options.add_argument("--headless")
+options.add_argument("--headless=new")
 options.add_argument("--no-sandbox")
 options.add_argument("--disable-dev-shm-usage")
-options.add_argument("--disable-blink-features=AutomationControlled")
-
-options.binary_location = "/usr/bin/chromium-browser"
+options.add_argument("--disable-gpu")
 
 driver = webdriver.Chrome(
     service=Service(ChromeDriverManager().install()),
     options=options
 )
+
 # =====================================================
-# METAL URLS
+# URLS
 # =====================================================
 
 metal_urls = {
@@ -67,7 +67,7 @@ usd_inr = 83.5
 firebase_data = {}
 
 # =====================================================
-# FETCH LIVE VALUES
+# FETCH
 # =====================================================
 
 for metal, url in metal_urls.items():
@@ -78,7 +78,9 @@ for metal, url in metal_urls.items():
 
         driver.get(url)
 
-        time.sleep(6)
+        time.sleep(8)
+
+        price = None
 
         selectors = [
 
@@ -90,19 +92,19 @@ for metal, url in metal_urls.items():
 
         ]
 
-        price = None
-
         for selector in selectors:
 
             try:
 
                 element = driver.find_element(By.CSS_SELECTOR, selector)
 
-                text = element.text.replace(",", "")
+                text = element.text.strip().replace(",", "")
 
-                price = float(text)
+                if text:
 
-                break
+                    price = float(text)
+
+                    break
 
             except:
                 pass
@@ -132,13 +134,13 @@ for metal, url in metal_urls.items():
         print("Error:", metal, str(e))
 
 # =====================================================
-# CLOSE DRIVER
+# CLOSE
 # =====================================================
 
 driver.quit()
 
 # =====================================================
-# SAFE PUSH
+# PUSH
 # =====================================================
 
 if len(firebase_data) > 0:
@@ -147,8 +149,8 @@ if len(firebase_data) > 0:
 
     ref.set(firebase_data)
 
-    print("REAL live metals updated")
+    print("SUCCESS")
 
 else:
 
-    print("No metal data fetched")
+    print("NO DATA")
