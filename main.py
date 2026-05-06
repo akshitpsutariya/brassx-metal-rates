@@ -17,7 +17,7 @@ firebase_dict = json.loads(firebase_json)
 cred = credentials.Certificate(firebase_dict)
 
 firebase_admin.initialize_app(cred, {
-    'databaseURL': 'https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com/'
+    'databaseURL': 'https://rate-calculator-ff3b1-default-rtdb.firebaseio.com/'
 })
 
 # ---------------------------
