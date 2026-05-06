@@ -2,11 +2,9 @@ import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import db
 
-from playwright.sync_api import sync_playwright
-
+import requests
 import json
 import os
-import re
 
 from datetime import datetime
 
@@ -25,83 +23,73 @@ firebase_admin.initialize_app(cred, {
 })
 
 # =====================================================
-# SETTINGS
+# USD INR
 # =====================================================
 
 usd_inr = 83.5
 
+# =====================================================
+# REAL METAL DATA
+# =====================================================
+
 metal_urls = {
 
-    "copper": "https://www.investing.com/commodities/copper",
+    "copper": "https://api.tradingeconomics.com/commodities/copper",
 
-    "zinc": "https://www.investing.com/commodities/lme-zinc",
+    "zinc": "https://api.tradingeconomics.com/commodities/zinc",
 
-    "nickel": "https://www.investing.com/commodities/lme-nickel",
+    "nickel": "https://api.tradingeconomics.com/commodities/nickel",
 
-    "lead": "https://www.investing.com/commodities/lead",
+    "lead": "https://api.tradingeconomics.com/commodities/lead",
 
-    "tin": "https://www.investing.com/commodities/lme-tin"
+    "tin": "https://api.tradingeconomics.com/commodities/tin"
 
 }
 
 firebase_data = {}
 
 # =====================================================
-# PLAYWRIGHT
+# FETCH FUNCTION
 # =====================================================
 
-with sync_playwright() as p:
+for metal, url in metal_urls.items():
 
-    browser = p.chromium.launch(
-    headless=True,
-    args=["--no-sandbox"]
-)
-    page = browser.new_page()
+    try:
 
-    for metal, url in metal_urls.items():
+        response = requests.get(url)
 
-        try:
+        text = response.text
 
-            print("Fetching:", metal)
+        # Extract numeric values
+        import re
 
-            page.goto(url, timeout=60000)
+        matches = re.findall(r'"LastPrice":([\d\.]+)', text)
 
-            page.wait_for_timeout(5000)
+        if matches:
 
-            html = page.content()
+            usd_per_ton = float(matches[0])
 
-            # Find live price
-            matches = re.findall(r'"last":"([\d,\.]+)"', html)
+            inr_per_kg = (usd_per_ton * usd_inr) / 1000
 
-            if matches:
+            firebase_data[metal] = {
 
-                value = matches[0].replace(",", "")
+                "usd_per_ton": round(usd_per_ton, 2),
 
-                usd_per_ton = float(value)
+                "inr_per_kg": round(inr_per_kg, 2),
 
-                inr_per_kg = (usd_per_ton * usd_inr) / 1000
+                "updated_at": str(datetime.now())
 
-                firebase_data[metal] = {
+            }
 
-                    "usd_per_ton": round(usd_per_ton, 2),
+            print(metal, usd_per_ton)
 
-                    "inr_per_kg": round(inr_per_kg, 2),
+        else:
 
-                    "updated_at": str(datetime.now())
+            print("No price:", metal)
 
-                }
+    except Exception as e:
 
-                print(metal, usd_per_ton)
-
-            else:
-
-                print("No value found:", metal)
-
-        except Exception as e:
-
-            print("Error:", metal, e)
-
-    browser.close()
+        print("Error:", metal, e)
 
 # =====================================================
 # SAFE FIREBASE PUSH
@@ -113,8 +101,8 @@ if len(firebase_data) > 0:
 
     ref.set(firebase_data)
 
-    print("Real live metals updated successfully")
+    print("Live metals updated successfully")
 
 else:
 
-    print("No data found")
+    print("No data fetched")
