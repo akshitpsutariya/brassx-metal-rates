@@ -3,11 +3,8 @@ from firebase_admin import credentials
 from firebase_admin import db
 
 import requests
-from bs4 import BeautifulSoup
-
 import json
 import os
-import re
 
 from datetime import datetime
 
@@ -26,22 +23,22 @@ firebase_admin.initialize_app(cred, {
 })
 
 # =====================================================
-# USD -> INR
+# USD INR
 # =====================================================
 
 usd_inr = 83.5
 
 # =====================================================
-# INVESTING.COM URLS
+# INVESTING IDS
 # =====================================================
 
-metal_urls = {
+metals = {
 
-    "copper": "https://www.investing.com/commodities/copper",
-    "zinc": "https://www.investing.com/commodities/lme-zinc",
-    "nickel": "https://www.investing.com/commodities/lme-nickel",
-    "lead": "https://www.investing.com/commodities/lead",
-    "tin": "https://www.investing.com/commodities/lme-tin"
+    "copper": "8830",
+    "zinc": "8832",
+    "nickel": "8831",
+    "lead": "8833",
+    "tin": "49789"
 
 }
 
@@ -50,93 +47,66 @@ metal_urls = {
 # =====================================================
 
 headers = {
-    "User-Agent": "Mozilla/5.0"
+
+    "User-Agent": "Mozilla/5.0",
+
+    "X-Requested-With": "XMLHttpRequest"
+
 }
 
 # =====================================================
 # FETCH FUNCTION
 # =====================================================
 
-def fetch_price(url):
+def fetch_price(pair_id):
 
     try:
 
+        url = f"https://api.investing.com/api/financialdata/{pair_id}/historical/chart/?period=PT1H"
+
         response = requests.get(url, headers=headers)
 
-        html = response.text
+        result = response.json()
 
-        soup = BeautifulSoup(html, "html.parser")
+        data = result.get("data", [])
 
-        # Try modern investing.com structure
-        selectors = [
+        if len(data) > 0:
 
-            'div[data-test="instrument-price-last"]',
+            latest = data[-1]
 
-            'span[data-test="instrument-price-last"]',
+            price = latest.get("last_close", None)
 
-            'div.text-5xl',
-
-            'span.text-2xl'
-
-        ]
-
-        for selector in selectors:
-
-            tag = soup.select_one(selector)
-
-            if tag:
-
-                text = tag.get_text(strip=True)
-
-                text = text.replace(",", "")
-
-                match = re.search(r"[\d\.]+", text)
-
-                if match:
-
-                    return float(match.group())
-
-        # fallback regex scan
-        text = soup.get_text(" ", strip=True)
-
-        match = re.search(r'last price[\s:]*([\d,\.]+)', text, re.IGNORECASE)
-
-        if match:
-
-            value = match.group(1).replace(",", "")
-
-            return float(value)
+            return float(price)
 
         return None
 
     except Exception as e:
 
-        print("Fetch error:", e)
+        print("Error:", e)
 
         return None
 
 # =====================================================
-# FETCH ALL METALS
+# CREATE DATA
 # =====================================================
 
-data = {}
+firebase_data = {}
 
-for metal, url in metal_urls.items():
+for metal, pair_id in metals.items():
 
-    print(f"Fetching {metal}")
+    print("Fetching:", metal)
 
-    price = fetch_price(url)
+    price = fetch_price(pair_id)
 
-    print(f"{metal} price:", price)
+    print("Price:", price)
 
-    if price is not None:
+    if price:
 
-        # Most investing values are already USD/TON
         usd_per_ton = price
 
         inr_per_kg = (usd_per_ton * usd_inr) / 1000
 
-        data[metal] = {
+        firebase_data[metal] = {
 
             "usd_per_ton": round(usd_per_ton, 2),
 
@@ -148,7 +118,7 @@ for metal, url in metal_urls.items():
 
     else:
 
-        data[metal] = {
+        firebase_data[metal] = {
 
             "error": "Price not found",
 
@@ -162,6 +132,6 @@ for metal, url in metal_urls.items():
 
 ref = db.reference("/metal_rates")
 
-ref.set(data)
+ref.set(firebase_data)
 
-print("Investing.com live metals updated successfully")
+print("Live metals updated successfully")
