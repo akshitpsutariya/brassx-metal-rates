@@ -3,8 +3,11 @@ from firebase_admin import credentials
 from firebase_admin import db
 
 import requests
+from bs4 import BeautifulSoup
+
 import json
 import os
+import re
 
 from datetime import datetime
 
@@ -23,108 +26,150 @@ firebase_admin.initialize_app(cred, {
 })
 
 # =====================================================
-# USD INR
+# SETTINGS
 # =====================================================
 
 usd_inr = 83.5
 
-# =====================================================
-# INVESTING IDS
-# =====================================================
-
-metals = {
-
-    "copper": "8830",
-    "zinc": "8832",
-    "nickel": "8831",
-    "lead": "8833",
-    "tin": "49789"
-
-}
-
-# =====================================================
-# HEADERS
-# =====================================================
+url = "https://in.investing.com/commodities/metals"
 
 headers = {
-
-    "User-Agent": "Mozilla/5.0",
-
-    "X-Requested-With": "XMLHttpRequest"
-
+    "User-Agent": "Mozilla/5.0"
 }
 
 # =====================================================
-# FETCH FUNCTION
+# FETCH PAGE
 # =====================================================
 
-def fetch_price(pair_id):
+response = requests.get(url, headers=headers)
+
+html = response.text
+
+# =====================================================
+# PARSE HTML
+# =====================================================
+
+soup = BeautifulSoup(html, "html.parser")
+
+text = soup.get_text("\n", strip=True)
+
+lines = text.split("\n")
+
+# =====================================================
+# METALS
+# =====================================================
+
+metals = {}
+
+# =====================================================
+# EXTRACT VALUES
+# =====================================================
+
+for i, line in enumerate(lines):
+
+    line_lower = line.lower()
 
     try:
 
-        url = f"https://api.investing.com/api/financialdata/{pair_id}/historical/chart/?period=PT1H"
+        # COPPER
+        if "copper derived" in line_lower:
 
-        response = requests.get(url, headers=headers)
+            for j in range(i, i + 5):
 
-        result = response.json()
+                value_line = lines[j].replace(",", "")
 
-        data = result.get("data", [])
+                match = re.search(r"\d+\.\d+|\d+", value_line)
 
-        if len(data) > 0:
+                if match:
 
-            latest = data[-1]
+                    metals["copper"] = float(match.group())
+                    break
 
-            price = latest.get("last_close", None)
+        # ZINC
+        elif "zinc derived" in line_lower:
 
-            return float(price)
+            for j in range(i, i + 5):
 
-        return None
+                value_line = lines[j].replace(",", "")
+
+                match = re.search(r"\d+\.\d+|\d+", value_line)
+
+                if match:
+
+                    metals["zinc"] = float(match.group())
+                    break
+
+        # NICKEL
+        elif "nickel derived" in line_lower:
+
+            for j in range(i, i + 5):
+
+                value_line = lines[j].replace(",", "")
+
+                match = re.search(r"\d+\.\d+|\d+", value_line)
+
+                if match:
+
+                    metals["nickel"] = float(match.group())
+                    break
+
+        # LEAD
+        elif "lead derived" in line_lower:
+
+            for j in range(i, i + 5):
+
+                value_line = lines[j].replace(",", "")
+
+                match = re.search(r"\d+\.\d+|\d+", value_line)
+
+                if match:
+
+                    metals["lead"] = float(match.group())
+                    break
+
+        # TIN
+        elif line_lower.strip() == "tin":
+
+            for j in range(i, i + 5):
+
+                value_line = lines[j].replace(",", "")
+
+                match = re.search(r"\d+\.\d+|\d+", value_line)
+
+                if match:
+
+                    metals["tin"] = float(match.group())
+                    break
 
     except Exception as e:
 
         print("Error:", e)
 
-        return None
+# =====================================================
+# DEBUG
+# =====================================================
+
+print("Fetched Metals:", metals)
 
 # =====================================================
-# CREATE DATA
+# CREATE FIREBASE DATA
 # =====================================================
 
 firebase_data = {}
 
-for metal, pair_id in metals.items():
+for metal, usd_per_ton in metals.items():
 
-    print("Fetching:", metal)
+    inr_per_kg = (usd_per_ton * usd_inr) / 1000
 
-    price = fetch_price(pair_id)
+    firebase_data[metal] = {
 
-    print("Price:", price)
+        "usd_per_ton": round(usd_per_ton, 2),
 
-    if price:
+        "inr_per_kg": round(inr_per_kg, 2),
 
-        usd_per_ton = price
+        "updated_at": str(datetime.now())
 
-        inr_per_kg = (usd_per_ton * usd_inr) / 1000
-
-        firebase_data[metal] = {
-
-            "usd_per_ton": round(usd_per_ton, 2),
-
-            "inr_per_kg": round(inr_per_kg, 2),
-
-            "updated_at": str(datetime.now())
-
-        }
-
-    else:
-
-        firebase_data[metal] = {
-
-            "error": "Price not found",
-
-            "updated_at": str(datetime.now())
-
-        }
+    }
 
 # =====================================================
 # PUSH TO FIREBASE
