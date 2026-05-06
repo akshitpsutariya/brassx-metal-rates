@@ -2,9 +2,15 @@ import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import db
 
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.options import Options
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.chrome.service import Service
+
 import json
 import os
-import requests
+import time
 from datetime import datetime
 
 # =====================================================
@@ -22,16 +28,36 @@ firebase_admin.initialize_app(cred, {
 })
 
 # =====================================================
-# SIMPLE WORKING METAL DATA
+# CHROME OPTIONS
 # =====================================================
 
-metals = {
+options = Options()
 
-    "copper": 9800,
-    "zinc": 2650,
-    "nickel": 19100,
-    "lead": 1980,
-    "tin": 32500
+options.add_argument("--headless")
+options.add_argument("--no-sandbox")
+options.add_argument("--disable-dev-shm-usage")
+options.add_argument("--disable-blink-features=AutomationControlled")
+
+driver = webdriver.Chrome(
+    service=Service(ChromeDriverManager().install()),
+    options=options
+)
+
+# =====================================================
+# METAL URLS
+# =====================================================
+
+metal_urls = {
+
+    "copper": "https://www.investing.com/commodities/copper",
+
+    "zinc": "https://www.investing.com/commodities/lme-zinc",
+
+    "nickel": "https://www.investing.com/commodities/lme-nickel",
+
+    "lead": "https://www.investing.com/commodities/lead",
+
+    "tin": "https://www.investing.com/commodities/lme-tin"
 
 }
 
@@ -40,29 +66,88 @@ usd_inr = 83.5
 firebase_data = {}
 
 # =====================================================
-# CREATE DATA
+# FETCH LIVE VALUES
 # =====================================================
 
-for metal, usd_per_ton in metals.items():
+for metal, url in metal_urls.items():
 
-    inr_per_kg = (usd_per_ton * usd_inr) / 1000
+    try:
 
-    firebase_data[metal] = {
+        print("Fetching:", metal)
 
-        "usd_per_ton": round(usd_per_ton, 2),
+        driver.get(url)
 
-        "inr_per_kg": round(inr_per_kg, 2),
+        time.sleep(6)
 
-        "updated_at": str(datetime.now())
+        selectors = [
 
-    }
+            '[data-test="instrument-price-last"]',
+
+            'div[data-test="instrument-price-last"]',
+
+            'span[data-test="instrument-price-last"]'
+
+        ]
+
+        price = None
+
+        for selector in selectors:
+
+            try:
+
+                element = driver.find_element(By.CSS_SELECTOR, selector)
+
+                text = element.text.replace(",", "")
+
+                price = float(text)
+
+                break
+
+            except:
+                pass
+
+        if price:
+
+            inr_per_kg = (price * usd_inr) / 1000
+
+            firebase_data[metal] = {
+
+                "usd_per_ton": round(price, 2),
+
+                "inr_per_kg": round(inr_per_kg, 2),
+
+                "updated_at": str(datetime.now())
+
+            }
+
+            print(metal, price)
+
+        else:
+
+            print("Price not found:", metal)
+
+    except Exception as e:
+
+        print("Error:", metal, str(e))
 
 # =====================================================
-# PUSH TO FIREBASE
+# CLOSE DRIVER
 # =====================================================
 
-ref = db.reference("/metal_rates")
+driver.quit()
 
-ref.set(firebase_data)
+# =====================================================
+# SAFE PUSH
+# =====================================================
 
-print("SUCCESS: Metal prices updated")
+if len(firebase_data) > 0:
+
+    ref = db.reference("/metal_rates")
+
+    ref.set(firebase_data)
+
+    print("REAL live metals updated")
+
+else:
+
+    print("No metal data fetched")
