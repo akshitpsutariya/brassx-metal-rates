@@ -18,11 +18,9 @@ jobs:
           python-version: "3.10"
 
       - name: Install packages
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Run Script
         env:
           FIREBASE_KEY: ${{ secrets.FIREBASE_KEY }}
-        run: |
-          python main.py
+        run: python main.py
