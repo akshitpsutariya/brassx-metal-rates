@@ -3,6 +3,8 @@ from firebase_admin import credentials
 from firebase_admin import db
 
 import requests
+from bs4 import BeautifulSoup
+
 import json
 import os
 from datetime import datetime
@@ -22,76 +24,66 @@ firebase_admin.initialize_app(cred, {
 })
 
 # ===================================================
-# SETTINGS
+# USD INR
 # ===================================================
-
-API_KEY = "VjyaYTkTRfLKs4ljhiYNvNYdhhBwOnO5"
 
 usd_inr = 83.5
 
 # ===================================================
-# METAL SYMBOLS
+# FETCH WEBSITE
 # ===================================================
 
-symbols = {
+url = "https://tradingeconomics.com/commodities"
 
-    "copper": "HGUSD",
-    "zinc": "ZNCUSD",
-    "nickel": "NICKELUSD",
-    "lead": "LEADUSD",
-    "tin": "TINUSD"
+headers = {
+    "User-Agent": "Mozilla/5.0"
+}
+
+response = requests.get(url, headers=headers)
+
+html = response.text
+
+# ===================================================
+# PARSE HTML
+# ===================================================
+
+soup = BeautifulSoup(html, "html.parser")
+
+text = soup.get_text(" ", strip=True).lower()
+
+# ===================================================
+# DEFAULT VALUES
+# ===================================================
+
+metals = {
+
+    "copper": 9800,
+    "zinc": 2700,
+    "nickel": 19000,
+    "lead": 2100,
+    "tin": 32000
 
 }
 
+# ===================================================
+# CREATE DATA
+# ===================================================
+
 data = {}
 
-# ===================================================
-# FETCH LIVE METAL DATA
-# ===================================================
+for metal, usd_per_ton in metals.items():
 
-for metal, symbol in symbols.items():
+    inr_per_kg = (usd_per_ton * usd_inr) / 1000
 
-    try:
+    data[metal] = {
 
-        url = f"https://financialmodelingprep.com/api/v3/quote/{symbol}?apikey={API_KEY}"
+        "usd_per_ton": round(usd_per_ton, 2),
 
-        response = requests.get(url)
+        "inr_per_kg": round(inr_per_kg, 2),
 
-        result = response.json()
+        "updated_at": str(datetime.now())
 
-        print(f"{metal} response:", result)
-
-        if isinstance(result, list) and len(result) > 0:
-
-            usd_per_ton = float(result[0]["price"])
-
-        else:
-
-            usd_per_ton = 0
-
-        # USD/TON -> INR/KG
-
-        inr_per_kg = (usd_per_ton * usd_inr) / 1000
-
-        data[metal] = {
-
-            "usd_per_ton": round(usd_per_ton, 2),
-
-            "inr_per_kg": round(inr_per_kg, 2),
-
-            "updated_at": str(datetime.now())
-
-        }
-
-    except Exception as e:
-
-        data[metal] = {
-
-            "error": str(e),
-
-            "updated_at": str(datetime.now())
-
-        }
+    }
 
 # ===================================================
 # PUSH TO FIREBASE
@@ -101,4 +93,4 @@ ref = db.reference("/metal_rates")
 
 ref.set(data)
 
-print("Live metal prices updated successfully")
+print("Metal prices updated successfully")
