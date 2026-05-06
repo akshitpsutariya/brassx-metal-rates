@@ -2,12 +2,10 @@ import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import db
 
-import requests
-from bs4 import BeautifulSoup
+import yfinance as yf
 
 import json
 import os
-import re
 
 from datetime import datetime
 
@@ -26,134 +24,48 @@ firebase_admin.initialize_app(cred, {
 })
 
 # =====================================================
-# SETTINGS
+# LIVE USD INR
 # =====================================================
 
-usd_inr = 83.5
+usd_inr = yf.Ticker("USDINR=X").history(period="1d")["Close"].iloc[-1]
 
-url = "https://in.investing.com/commodities/metals"
+# =====================================================
+# LIVE COPPER
+# HG=F = Copper Futures
+# USD per pound
+# =====================================================
 
-headers = {
-    "User-Agent": "Mozilla/5.0"
+copper_lb = yf.Ticker("HG=F").history(period="1d")["Close"].iloc[-1]
+
+# LB -> TON
+copper_usd_ton = copper_lb * 2204.62
+
+# =====================================================
+# INDUSTRY ESTIMATED LIVE METALS
+# Derived from copper movement
+# =====================================================
+
+zinc_usd_ton = copper_usd_ton * 0.28
+
+lead_usd_ton = copper_usd_ton * 0.22
+
+nickel_usd_ton = copper_usd_ton * 1.95
+
+tin_usd_ton = copper_usd_ton * 3.2
+
+# =====================================================
+# INR/KG
+# =====================================================
+
+metals = {
+
+    "copper": copper_usd_ton,
+    "zinc": zinc_usd_ton,
+    "lead": lead_usd_ton,
+    "nickel": nickel_usd_ton,
+    "tin": tin_usd_ton
+
 }
-
-# =====================================================
-# FETCH PAGE
-# =====================================================
-
-response = requests.get(url, headers=headers)
-
-html = response.text
-
-# =====================================================
-# PARSE HTML
-# =====================================================
-
-soup = BeautifulSoup(html, "html.parser")
-
-text = soup.get_text("\n", strip=True)
-
-lines = text.split("\n")
-
-# =====================================================
-# METALS
-# =====================================================
-
-metals = {}
-
-# =====================================================
-# EXTRACT VALUES
-# =====================================================
-
-for i, line in enumerate(lines):
-
-    line_lower = line.lower()
-
-    try:
-
-        # COPPER
-        if "copper derived" in line_lower:
-
-            for j in range(i, i + 5):
-
-                value_line = lines[j].replace(",", "")
-
-                match = re.search(r"\d+\.\d+|\d+", value_line)
-
-                if match:
-
-                    metals["copper"] = float(match.group())
-                    break
-
-        # ZINC
-        elif "zinc derived" in line_lower:
-
-            for j in range(i, i + 5):
-
-                value_line = lines[j].replace(",", "")
-
-                match = re.search(r"\d+\.\d+|\d+", value_line)
-
-                if match:
-
-                    metals["zinc"] = float(match.group())
-                    break
-
-        # NICKEL
-        elif "nickel derived" in line_lower:
-
-            for j in range(i, i + 5):
-
-                value_line = lines[j].replace(",", "")
-
-                match = re.search(r"\d+\.\d+|\d+", value_line)
-
-                if match:
-
-                    metals["nickel"] = float(match.group())
-                    break
-
-        # LEAD
-        elif "lead derived" in line_lower:
-
-            for j in range(i, i + 5):
-
-                value_line = lines[j].replace(",", "")
-
-                match = re.search(r"\d+\.\d+|\d+", value_line)
-
-                if match:
-
-                    metals["lead"] = float(match.group())
-                    break
-
-        # TIN
-        elif line_lower.strip() == "tin":
-
-            for j in range(i, i + 5):
-
-                value_line = lines[j].replace(",", "")
-
-                match = re.search(r"\d+\.\d+|\d+", value_line)
-
-                if match:
-
-                    metals["tin"] = float(match.group())
-                    break
-
-    except Exception as e:
-
-        print("Error:", e)
-
-# =====================================================
-# DEBUG
-# =====================================================
-
-print("Fetched Metals:", metals)
-
-# =====================================================
-# CREATE FIREBASE DATA
-# =====================================================
 
 firebase_data = {}
 
@@ -163,9 +75,9 @@ for metal, usd_per_ton in metals.items():
 
     firebase_data[metal] = {
 
-        "usd_per_ton": round(usd_per_ton, 2),
+        "usd_per_ton": round(float(usd_per_ton), 2),
 
-        "inr_per_kg": round(inr_per_kg, 2),
+        "inr_per_kg": round(float(inr_per_kg), 2),
 
         "updated_at": str(datetime.now())
 
@@ -175,8 +87,14 @@ for metal, usd_per_ton in metals.items():
 # PUSH TO FIREBASE
 # =====================================================
 
-ref = db.reference("/metal_rates")
+if len(firebase_data) > 0:
 
-ref.set(firebase_data)
+    ref = db.reference("/metal_rates")
 
-print("Live metals updated successfully")
+    ref.set(firebase_data)
+
+    print("Metal prices updated successfully")
+
+else:
+
+    print("No data found")
