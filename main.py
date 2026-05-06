@@ -11,9 +11,9 @@ import re
 
 from datetime import datetime
 
-# ===================================================
+# =====================================================
 # FIREBASE INIT
-# ===================================================
+# =====================================================
 
 firebase_json = os.environ.get("FIREBASE_KEY")
 
@@ -25,120 +25,143 @@ firebase_admin.initialize_app(cred, {
     'databaseURL': 'https://rate-calculator-ff3b1-default-rtdb.firebaseio.com/'
 })
 
-# ===================================================
-# USD INR RATE
-# ===================================================
+# =====================================================
+# USD -> INR
+# =====================================================
 
 usd_inr = 83.5
 
-# ===================================================
-# FETCH TRADING ECONOMICS
-# ===================================================
+# =====================================================
+# INVESTING.COM URLS
+# =====================================================
 
-url = "https://tradingeconomics.com/commodities"
+metal_urls = {
+
+    "copper": "https://www.investing.com/commodities/copper",
+    "zinc": "https://www.investing.com/commodities/lme-zinc",
+    "nickel": "https://www.investing.com/commodities/lme-nickel",
+    "lead": "https://www.investing.com/commodities/lead",
+    "tin": "https://www.investing.com/commodities/lme-tin"
+
+}
+
+# =====================================================
+# HEADERS
+# =====================================================
 
 headers = {
     "User-Agent": "Mozilla/5.0"
 }
 
-response = requests.get(url, headers=headers)
+# =====================================================
+# FETCH FUNCTION
+# =====================================================
 
-html = response.text
+def fetch_price(url):
 
-# ===================================================
-# PARSE HTML
-# ===================================================
+    try:
 
-soup = BeautifulSoup(html, "html.parser")
+        response = requests.get(url, headers=headers)
 
-tables = soup.find_all("table")
+        html = response.text
 
-# ===================================================
-# STORE METALS
-# ===================================================
+        soup = BeautifulSoup(html, "html.parser")
 
-metals = {}
+        # Try modern investing.com structure
+        selectors = [
 
-# ===================================================
-# EXTRACT ROWS
-# ===================================================
+            'div[data-test="instrument-price-last"]',
 
-for table in tables:
+            'span[data-test="instrument-price-last"]',
 
-    rows = table.find_all("tr")
+            'div.text-5xl',
 
-    for row in rows:
+            'span.text-2xl'
 
-        cols = row.find_all("td")
+        ]
 
-        if len(cols) > 1:
+        for selector in selectors:
 
-            try:
+            tag = soup.select_one(selector)
 
-                name = cols[0].get_text(strip=True).lower()
+            if tag:
 
-                price_text = cols[1].get_text(strip=True)
+                text = tag.get_text(strip=True)
 
-                # Remove commas
-                price_text = price_text.replace(",", "")
+                text = text.replace(",", "")
 
-                # Extract number
-                match = re.search(r"[\d\.]+", price_text)
+                match = re.search(r"[\d\.]+", text)
 
                 if match:
 
-                    value = float(match.group())
+                    return float(match.group())
 
-                    if "copper" in name:
-                        metals["copper"] = value
+        # fallback regex scan
+        text = soup.get_text(" ", strip=True)
 
-                    elif "zinc" in name:
-                        metals["zinc"] = value
+        match = re.search(r'last price[\s:]*([\d,\.]+)', text, re.IGNORECASE)
 
-                    elif "nickel" in name:
-                        metals["nickel"] = value
+        if match:
 
-                    elif "lead" in name:
-                        metals["lead"] = value
+            value = match.group(1).replace(",", "")
 
-                    elif "tin" in name:
-                        metals["tin"] = value
+            return float(value)
 
-            except Exception as e:
-                print("Row error:", e)
+        return None
 
-# ===================================================
-# DEBUG PRINT
-# ===================================================
+    except Exception as e:
 
-print("Fetched Metals:", metals)
+        print("Fetch error:", e)
 
-# ===================================================
-# CREATE FIREBASE DATA
-# ===================================================
+        return None
+
+# =====================================================
+# FETCH ALL METALS
+# =====================================================
 
 data = {}
 
-for metal, usd_per_ton in metals.items():
+for metal, url in metal_urls.items():
 
-    inr_per_kg = (usd_per_ton * usd_inr) / 1000
+    print(f"Fetching {metal}")
 
-    data[metal] = {
+    price = fetch_price(url)
 
-        "usd_per_ton": round(usd_per_ton, 2),
+    print(f"{metal} price:", price)
 
-        "inr_per_kg": round(inr_per_kg, 2),
+    if price is not None:
 
-        "updated_at": str(datetime.now())
+        # Most investing values are already USD/TON
+        usd_per_ton = price
 
-    }
+        inr_per_kg = (usd_per_ton * usd_inr) / 1000
 
-# ===================================================
+        data[metal] = {
+
+            "usd_per_ton": round(usd_per_ton, 2),
+
+            "inr_per_kg": round(inr_per_kg, 2),
+
+            "updated_at": str(datetime.now())
+
+        }
+
+    else:
+
+        data[metal] = {
+
+            "error": "Price not found",
+
+            "updated_at": str(datetime.now())
+
+        }
+
+# =====================================================
 # PUSH TO FIREBASE
-# ===================================================
+# =====================================================
 
 ref = db.reference("/metal_rates")
 
 ref.set(data)
 
-print("Live metal prices updated successfully")
+print("Investing.com live metals updated successfully")
