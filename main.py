@@ -2,10 +2,12 @@ import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import db
 
-import yfinance as yf
+import requests
+from bs4 import BeautifulSoup
 
 import json
 import os
+import re
 
 from datetime import datetime
 
@@ -24,67 +26,111 @@ firebase_admin.initialize_app(cred, {
 })
 
 # =====================================================
-# LIVE USD INR
+# USD INR
 # =====================================================
 
-usd_inr = yf.Ticker("USDINR=X").history(period="1d")["Close"].iloc[-1]
+usd_inr = 83.5
 
 # =====================================================
-# LIVE COPPER
-# HG=F = Copper Futures
-# USD per pound
+# METAL URLS
 # =====================================================
 
-copper_lb = yf.Ticker("HG=F").history(period="1d")["Close"].iloc[-1]
+metal_urls = {
 
-# LB -> TON
-copper_usd_ton = copper_lb * 2204.62
+    "copper": "https://www.investing.com/commodities/copper",
 
-# =====================================================
-# INDUSTRY ESTIMATED LIVE METALS
-# Derived from copper movement
-# =====================================================
+    "zinc": "https://www.investing.com/commodities/lme-zinc",
 
-zinc_usd_ton = copper_usd_ton * 0.28
+    "nickel": "https://www.investing.com/commodities/lme-nickel",
 
-lead_usd_ton = copper_usd_ton * 0.22
+    "lead": "https://www.investing.com/commodities/lead",
 
-nickel_usd_ton = copper_usd_ton * 1.95
-
-tin_usd_ton = copper_usd_ton * 3.2
-
-# =====================================================
-# INR/KG
-# =====================================================
-
-metals = {
-
-    "copper": copper_usd_ton,
-    "zinc": zinc_usd_ton,
-    "lead": lead_usd_ton,
-    "nickel": nickel_usd_ton,
-    "tin": tin_usd_ton
+    "tin": "https://www.investing.com/commodities/lme-tin"
 
 }
 
-firebase_data = {}
+# =====================================================
+# HEADERS
+# =====================================================
 
-for metal, usd_per_ton in metals.items():
-
-    inr_per_kg = (usd_per_ton * usd_inr) / 1000
-
-    firebase_data[metal] = {
-
-        "usd_per_ton": round(float(usd_per_ton), 2),
-
-        "inr_per_kg": round(float(inr_per_kg), 2),
-
-        "updated_at": str(datetime.now())
-
-    }
+headers = {
+    "User-Agent": "Mozilla/5.0"
+}
 
 # =====================================================
-# PUSH TO FIREBASE
+# FETCH FUNCTION
+# =====================================================
+
+def fetch_price(url):
+
+    try:
+
+        response = requests.get(url, headers=headers)
+
+        html = response.text
+
+        # regex for live price
+        matches = re.findall(r'"last":"([\d,\.]+)"', html)
+
+        if matches:
+
+            value = matches[0].replace(",", "")
+
+            return float(value)
+
+        # fallback parser
+        soup = BeautifulSoup(html, "html.parser")
+
+        text = soup.get_text(" ", strip=True)
+
+        number_match = re.search(r'([\d,]+\.\d+)', text)
+
+        if number_match:
+
+            value = number_match.group(1).replace(",", "")
+
+            return float(value)
+
+        return None
+
+    except Exception as e:
+
+        print("Error:", e)
+
+        return None
+
+# =====================================================
+# FETCH METALS
+# =====================================================
+
+firebase_data = {}
+
+for metal, url in metal_urls.items():
+
+    print("Fetching:", metal)
+
+    price = fetch_price(url)
+
+    print("Price:", price)
+
+    if price:
+
+        usd_per_ton = price
+
+        inr_per_kg = (usd_per_ton * usd_inr) / 1000
+
+        firebase_data[metal] = {
+
+            "usd_per_ton": round(usd_per_ton, 2),
+
+            "inr_per_kg": round(inr_per_kg, 2),
+
+            "updated_at": str(datetime.now())
+
+        }
+
+# =====================================================
+# SAFE PUSH
 # =====================================================
 
 if len(firebase_data) > 0:
@@ -93,8 +139,8 @@ if len(firebase_data) > 0:
 
     ref.set(firebase_data)
 
-    print("Metal prices updated successfully")
+    print("Live metals updated successfully")
 
 else:
 
-    print("No data found")
+    print("No data found. Firebase not updated.")
