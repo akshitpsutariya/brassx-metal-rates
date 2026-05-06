@@ -1,4 +1,2 @@
 firebase-admin
-yfinance
-pandas
 requests
