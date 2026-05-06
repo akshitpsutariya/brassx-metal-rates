@@ -7,6 +7,8 @@ from bs4 import BeautifulSoup
 
 import json
 import os
+import re
+
 from datetime import datetime
 
 # ===================================================
@@ -24,13 +26,13 @@ firebase_admin.initialize_app(cred, {
 })
 
 # ===================================================
-# USD INR
+# USD INR RATE
 # ===================================================
 
 usd_inr = 83.5
 
 # ===================================================
-# FETCH WEBSITE
+# FETCH TRADING ECONOMICS
 # ===================================================
 
 url = "https://tradingeconomics.com/commodities"
@@ -49,24 +51,70 @@ html = response.text
 
 soup = BeautifulSoup(html, "html.parser")
 
-text = soup.get_text(" ", strip=True).lower()
+tables = soup.find_all("table")
 
 # ===================================================
-# DEFAULT VALUES
+# STORE METALS
 # ===================================================
 
-metals = {
-
-    "copper": 9800,
-    "zinc": 2700,
-    "nickel": 19000,
-    "lead": 2100,
-    "tin": 32000
-
-}
+metals = {}
 
 # ===================================================
-# CREATE DATA
+# EXTRACT ROWS
+# ===================================================
+
+for table in tables:
+
+    rows = table.find_all("tr")
+
+    for row in rows:
+
+        cols = row.find_all("td")
+
+        if len(cols) > 1:
+
+            try:
+
+                name = cols[0].get_text(strip=True).lower()
+
+                price_text = cols[1].get_text(strip=True)
+
+                # Remove commas
+                price_text = price_text.replace(",", "")
+
+                # Extract number
+                match = re.search(r"[\d\.]+", price_text)
+
+                if match:
+
+                    value = float(match.group())
+
+                    if "copper" in name:
+                        metals["copper"] = value
+
+                    elif "zinc" in name:
+                        metals["zinc"] = value
+
+                    elif "nickel" in name:
+                        metals["nickel"] = value
+
+                    elif "lead" in name:
+                        metals["lead"] = value
+
+                    elif "tin" in name:
+                        metals["tin"] = value
+
+            except Exception as e:
+                print("Row error:", e)
+
+# ===================================================
+# DEBUG PRINT
+# ===================================================
+
+print("Fetched Metals:", metals)
+
+# ===================================================
+# CREATE FIREBASE DATA
 # ===================================================
 
 data = {}
@@ -93,4 +141,4 @@ ref = db.reference("/metal_rates")
 
 ref.set(data)
 
-print("Metal prices updated successfully")
+print("Live metal prices updated successfully")
