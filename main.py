@@ -2,24 +2,17 @@ import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import db
 
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-
-from webdriver_manager.chrome import ChromeDriverManager
-
+import requests
 import json
 import os
-import time
+
 from datetime import datetime
 
 # =====================================================
-# FIREBASE
+# FIREBASE INIT
 # =====================================================
 
 firebase_json = os.environ.get("FIREBASE_KEY")
-
 firebase_dict = json.loads(firebase_json)
 
 cred = credentials.Certificate(firebase_dict)
@@ -29,40 +22,26 @@ firebase_admin.initialize_app(cred, {
 })
 
 # =====================================================
-# CHROME OPTIONS
+# SETTINGS
 # =====================================================
 
-options = Options()
-
-options.add_argument("--headless=new")
-options.add_argument("--no-sandbox")
-options.add_argument("--disable-dev-shm-usage")
-options.add_argument("--disable-gpu")
-
-driver = webdriver.Chrome(
-    service=Service(ChromeDriverManager().install()),
-    options=options
-)
-
-# =====================================================
-# URLS
-# =====================================================
-
-metal_urls = {
-
-    "copper": "https://www.investing.com/commodities/copper",
-
-    "zinc": "https://www.investing.com/commodities/lme-zinc",
-
-    "nickel": "https://www.investing.com/commodities/lme-nickel",
-
-    "lead": "https://www.investing.com/commodities/lead",
-
-    "tin": "https://www.investing.com/commodities/lme-tin"
-
-}
+API_KEY = "VjyaYTkTRfLKs4ljhiYNvNYdhhBwOnO5"
 
 usd_inr = 83.5
+
+# =====================================================
+# REAL COMMODITY SYMBOLS
+# =====================================================
+
+symbols = {
+
+    "copper": "HGUSD",
+    "nickel": "NICKEL",
+    "lead": "LEAD",
+    "zinc": "ZINC",
+    "tin": "TIN"
+
+}
 
 firebase_data = {}
 
@@ -70,46 +49,21 @@ firebase_data = {}
 # FETCH
 # =====================================================
 
-for metal, url in metal_urls.items():
+for metal, symbol in symbols.items():
 
     try:
 
-        print("Fetching:", metal)
+        url = f"https://financialmodelingprep.com/api/v3/quote-short/{symbol}?apikey={API_KEY}"
 
-        driver.get(url)
+        response = requests.get(url)
 
-        time.sleep(8)
+        result = response.json()
 
-        price = None
+        print(metal, result)
 
-        selectors = [
+        if isinstance(result, list) and len(result) > 0:
 
-            '[data-test="instrument-price-last"]',
-
-            'div[data-test="instrument-price-last"]',
-
-            'span[data-test="instrument-price-last"]'
-
-        ]
-
-        for selector in selectors:
-
-            try:
-
-                element = driver.find_element(By.CSS_SELECTOR, selector)
-
-                text = element.text.strip().replace(",", "")
-
-                if text:
-
-                    price = float(text)
-
-                    break
-
-            except:
-                pass
-
-        if price:
+            price = float(result[0]["price"])
 
             inr_per_kg = (price * usd_inr) / 1000
 
@@ -123,21 +77,9 @@ for metal, url in metal_urls.items():
 
             }
 
-            print(metal, price)
-
-        else:
-
-            print("Price not found:", metal)
-
     except Exception as e:
 
-        print("Error:", metal, str(e))
-
-# =====================================================
-# CLOSE
-# =====================================================
-
-driver.quit()
+        print("ERROR:", metal, str(e))
 
 # =====================================================
 # PUSH
